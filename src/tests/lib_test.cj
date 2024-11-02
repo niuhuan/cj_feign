@@ -19,7 +19,7 @@ import cj_feign.*
 @When[test]
 @ToString
 @AllArgsConstructor
-@Serializable
+@Serializable[AllArgsConstructor]
 @Json
 public class Request {
     let request_conetent: String
@@ -28,7 +28,7 @@ public class Request {
 @When[test]
 @ToString
 @AllArgsConstructor
-@Serializable
+@Serializable[AllArgsConstructor]
 @Json
 public class Response {
     let response_content: String
