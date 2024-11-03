@@ -39,9 +39,9 @@ public interface MyCLientC {
     @PostMapping[path="/hello"]
     func hello1(@RequestBody body: Request): Response
     @GetMapping
-    func hello2(a: String): Response
+    func hello2(account_id: String, @RequestHeader["auth"] auth: String): Response
     @PostMapping
-    func hello3(a: String): Response
+    func hello3(@RequestParam["account_id"] accountId: String): Response
 }
 
 @When[test]

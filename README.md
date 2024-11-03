@@ -18,9 +18,12 @@ cj_lombok = { git = "https://gitcode.com/niuhuan_cn/cj_feign.git" }
 
 ## 📖 特性
 
-| 宏定义 | 说明 |
-| -- | -- |
-| `@FeignClient` | 将接口变为Http客户端实现 |
+| 宏定义 | 位置 | 说明 |
+| -- | -- | -- |
+| `@FeignClient` | 接口 | 将接口变为Http客户端实现 |
+| `@RequestBody` | 方法 | 使用Json发送数据 |
+| `@ReauestHeader` / `@RequestHeader["name"]` | 方法 | 增加Header |
+| `@RequestParam` / `@RequestHeader["name"]` | 方法 | 声明该参数是form参数, 也是不加宏时候的默认处理方式 |
 
 
 ## 🔖 用例
@@ -31,11 +34,32 @@ cj_lombok = { git = "https://gitcode.com/niuhuan_cn/cj_feign.git" }
 
 
 ```cangjie
+
+@ToString
+@AllArgsConstructor
+@Serializable[AllArgsConstructor]
+@Json
+public class Request {
+    let request_conetent: String
+}
+
+@ToString
+@AllArgsConstructor
+@Serializable[AllArgsConstructor]
+@Json
+public class Response {
+    let response_content: String
+}
+
 // 创建一个客户端
 @FeignClient[path = "http://localhost:18080"]
 public interface MyCLientC {
     @PostMapping[path="/hello"]
-    func hello(@RequestBody body: Request): Response
+    func hello1(@RequestBody body: Request): Response
+    @GetMapping
+    func hello2(account_id: String, @RequestHeader["auth"] auth: String): Response
+    @PostMapping
+    func hello3(@RequestParam["account_id"] accountId: String): Response
 }
 
 // 使用
@@ -56,7 +80,7 @@ cjpm run finished
 
 提示:
 
-`class Request` 和 `class Response` 均实现
+部分宏来自`cj_lombok`
 
 ## 🏆 贡献
 
@@ -65,6 +89,7 @@ cjpm run finished
 #### 计划中的特性
 
 - [ ] 避免用户import其他包
+- [ ] RequestBuilder过滤器, 请求前用户对请求做一些操作
 
 
 ## 📕 协议

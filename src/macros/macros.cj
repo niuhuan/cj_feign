@@ -27,8 +27,8 @@ func feignClient(attrTokens: Tokens, inputTokens: Tokens) : Tokens {
                         "invalid attribute",
                         "path attribute should have a value"
                     )
+                    throw Exception("invalid attribute")
                 }
-            
             case Attr.NameAndValue(name, value) => 
                 if (name == "path") {
                     clientPath = Some(value)
@@ -39,6 +39,7 @@ func feignClient(attrTokens: Tokens, inputTokens: Tokens) : Tokens {
                         "invalid attribute",
                         "only path attribute is supported"
                     )
+                    throw Exception("invalid attribute")
                 }
             
         }
@@ -83,6 +84,7 @@ func feignClient(attrTokens: Tokens, inputTokens: Tokens) : Tokens {
           result += token
         }
     }
+    // println("result: ${result}")
     result
 }
 
@@ -123,6 +125,7 @@ func splitAttrTokens(attrTokens: Tokens) : ArrayList<Attr> {
                 "invalid attribute",
                 "attribute should be identifier, or identifier = value, like `name` or `name = \"value\""
              )
+            throw Exception("invalid attribute")
         }
         if (accAttrTokens.size == 1) {
             attrs.append(Attr.Name(accAttrTokens[0].value))
@@ -148,6 +151,7 @@ func processDecls(decls: ArrayList<Decl>, inputTokens: Tokens) : ArrayList<Decl>
                     "invalid declaration",
                     "only function declaration is supported, check: ${quote($decl)}"
                 )
+                throw Exception("invalid declaration")
             }
         } else {
             diagReport(
@@ -156,6 +160,7 @@ func processDecls(decls: ArrayList<Decl>, inputTokens: Tokens) : ArrayList<Decl>
                 "invalid declaration",
                 "only function declaration is supported , check: ${quote($decl)}"
             )
+            throw Exception("invalid declaration")
         }
     }
     newDecls
@@ -168,6 +173,7 @@ func processFuncDecl(macroExpandDecl: MacroExpandDecl, funcDecl: FuncDecl, input
     var requestBody = Option<FeignFuncParam>.None
     var pathVariables = ArrayList<FeignFuncParam>()
     var queryParams = ArrayList<FeignFuncParam>()
+    var requestHeaders = ArrayList<FeignFuncParam>()
     var funcParamsClean = quote()
     var first = true
     for (funcParam in funcParams) {
@@ -189,6 +195,7 @@ func processFuncDecl(macroExpandDecl: MacroExpandDecl, funcDecl: FuncDecl, input
                                     "invalid function parameter",
                                     "GetMapping does not support RequestBody"
                                 )
+                                throw Exception("invalid function parameter")
                             case _ => 
                                 if (queryParams.size > 0) {
                                     diagReport(
@@ -197,6 +204,7 @@ func processFuncDecl(macroExpandDecl: MacroExpandDecl, funcDecl: FuncDecl, input
                                         "invalid function parameter",
                                         "RequestBody and QueryParam can not be used together"
                                     )
+                                    throw Exception("invalid function parameter")
                                 } else {
                                     requestBody = Some(feignFuncParam) 
                                 }     
@@ -208,6 +216,7 @@ func processFuncDecl(macroExpandDecl: MacroExpandDecl, funcDecl: FuncDecl, input
                             "invalid function parameter",
                             "only one RequestBody is supported"
                         )
+                        throw Exception("invalid function parameter")
                 }
             case FeignFuncParam.PathVariable(name, idType) =>
                 if (first) {
@@ -217,7 +226,7 @@ func processFuncDecl(macroExpandDecl: MacroExpandDecl, funcDecl: FuncDecl, input
                 }
                 funcParamsClean.append(quote ( $(name): $(idType) ))
                 pathVariables.append(feignFuncParam)
-            case FeignFuncParam.QueryParam(name, idType) =>
+            case FeignFuncParam.QueryParam(name, idType, _) =>
                 if (first) {
                     first = false
                 } else {
@@ -233,7 +242,16 @@ func processFuncDecl(macroExpandDecl: MacroExpandDecl, funcDecl: FuncDecl, input
                         "invalid function parameter",
                         "RequestBody and QueryParam can not be used together"
                     )
+                    throw Exception("invalid function parameter")
                 }
+            case FeignFuncParam.RequestHeader(name, idType, _) =>
+                if (first) {
+                    first = false
+                } else {
+                    funcParamsClean += quote ( , )
+                }
+                funcParamsClean.append(quote ( $(name): $(idType) ))
+                requestHeaders.append(feignFuncParam)
         }
     }
     let funcReturnType = funcDecl.declType
@@ -251,6 +269,7 @@ func processFuncDecl(macroExpandDecl: MacroExpandDecl, funcDecl: FuncDecl, input
     // gen tokens
     let formTokens = formTokens(mapping, queryParams)
     let requestBodyTokens = requestBodyTokens(mapping, requestBody)
+    let headerTokens = headerTokens(requestHeaders)
     let result = quote (
         public func $(funcName) ($(funcParamsClean)) : $(funcReturnType) {
             let funcCfg = FeignFuncConfigs();
@@ -280,7 +299,8 @@ func processFuncDecl(macroExpandDecl: MacroExpandDecl, funcDecl: FuncDecl, input
                         requestBodyTokens
                     }
                  )
-                 FeignClientRequestBuilder.execute<$(funcReturnType)>(client, request)
+                 $headerTokens
+                 FeignClientRequestBuilder.execute<$(funcReturnType)>(client, requestBuilder.build())
             } finally {
                 client.close()
             }
@@ -293,14 +313,14 @@ private func formTokens(mapping: FeignClientMapping, queryParams: ArrayList<Feig
     var formAddTokens = quote ( let form = Form() )
     for (qp in queryParams) {
         match (qp) {
-            case FeignFuncParam.QueryParam(id, idType) =>
+            case FeignFuncParam.QueryParam(id, idType, idTitle) =>
                 if (idType.value == "String") {
                     formAddTokens += quote (
-                        form.add($(id.value), $(id))
+                        form.add($(idTitle), $(id))
                     )
                 } else {
                     formAddTokens += quote (
-                        form.add($(id.value), $(id).ToString())
+                        form.add($(idTitle), $(id).ToString())
                     )
                 }
             case _ => throw Exception("invalid query param")
@@ -310,14 +330,13 @@ private func formTokens(mapping: FeignClientMapping, queryParams: ArrayList<Feig
         case FeignClientMapping.GetMapping =>
             formAddTokens += quote (
                 let fullUrl = url.toString() + "?" + form.toEncodeString()
-                let request = HttpRequestBuilder()
+                let requestBuilder = HttpRequestBuilder()
                 .url(fullUrl)
                 .get()
-                .build()
             )
         case _ =>
             formAddTokens += quote (
-                let request = HttpRequestBuilder()
+                let requestBuilder = HttpRequestBuilder()
                     .url(url)
                     .body(form.toEncodeString())
                     .header("Content-Type", "application/x-www-form-urlencoded")
@@ -326,17 +345,14 @@ private func formTokens(mapping: FeignClientMapping, queryParams: ArrayList<Feig
                 case FeignClientMapping.PostMapping =>
                     formAddTokens += quote (
                         .post()
-                        .build()
                     )
                 case FeignClientMapping.PutMapping =>
                     formAddTokens += quote (
                         .put()
-                        .build()
                     )
                 case FeignClientMapping.DeleteMapping =>
                     formAddTokens += quote (
                         .delete()
-                        .build()
                     )
                 case _ => throw Exception("invalid mapping")
             }
@@ -346,7 +362,7 @@ private func formTokens(mapping: FeignClientMapping, queryParams: ArrayList<Feig
 
 private func requestBodyTokens(mapping: FeignClientMapping, requestBody: Option<FeignFuncParam>) : Tokens {
     var requestBodyTokens = quote (
-        let request = HttpRequestBuilder()
+        let requestBuilder = HttpRequestBuilder()
                             .url(url)
     )
     match (requestBody) {
@@ -362,25 +378,41 @@ private func requestBodyTokens(mapping: FeignClientMapping, requestBody: Option<
         case FeignClientMapping.PostMapping =>
             requestBodyTokens += quote (
                 .post()
-                .build()
             )
         case FeignClientMapping.PutMapping =>
             requestBodyTokens += quote (
                 .put()
-                .build()
             )
         case FeignClientMapping.DeleteMapping =>
             requestBodyTokens += quote (
                 .delete()
-                .build()
             )
         case FeignClientMapping.GetMapping =>
             requestBodyTokens += quote (
                 .get()
-                .build()
             )
     }
     requestBodyTokens
+}
+
+private func headerTokens(requestHeaders: ArrayList<FeignFuncParam>) : Tokens {
+    var headerTokens = quote()
+    for (rh in requestHeaders) {
+        match (rh) {
+            case FeignFuncParam.RequestHeader(id, idType, idTitle) =>
+                if (idType.value == "String") {
+                    headerTokens += quote (
+                        requestBuilder.header($(idTitle), $(id))
+                    )
+                } else {
+                    headerTokens += quote (
+                        requestBuilder.header($(idTitle), $(id).ToString())
+                    )
+                }
+            case _ => throw Exception("invalid request header")
+        }
+    }
+    headerTokens
 }
 
 private func processFeignClientMapping(macroExpandDecl: MacroExpandDecl, inputTokens: Tokens) : (FeignClientMapping, Option<String>) {
@@ -403,6 +435,7 @@ private func processFeignClientMapping(macroExpandDecl: MacroExpandDecl, inputTo
                 "invalid function declaration",
                 "only PostMapping, PutMapping, DeleteMapping, GetMapping is supported"
             )
+            throw Exception("invalid function declaration")
     }
     let attr = splitAttrTokens(macroAttrs)
     var path = Option<String>.None
@@ -418,6 +451,7 @@ private func processFeignClientMapping(macroExpandDecl: MacroExpandDecl, inputTo
                         "invalid attribute",
                         "only path attribute is supported"
                     )
+                    throw Exception("invalid attribute")
                 }
             case _ => 
                 diagReport(
@@ -426,65 +460,145 @@ private func processFeignClientMapping(macroExpandDecl: MacroExpandDecl, inputTo
                     "invalid attribute",
                     "only path attribute is supported"
                 )
+                throw Exception("invalid attribute")
         }
     }
     (mapping.getOrThrow(), path)
 }
 
+
 private func processFuncParam(funcParam: FuncParam, inputTokens: Tokens) : FeignFuncParam {
-        let paramTokens = quote ( $funcParam )
-        if (paramTokens[0].kind == AT) {
-          // [0] @(AT) | [1] RequestBody(IDENTIFIER) | [2] \n(NL) | [3]  body(IDENTIFIER)| [4] :(COLON) | [5] Request(IDENTIFIER)
-          if (paramTokens.size != 6 || paramTokens[1].kind != IDENTIFIER || paramTokens[2].kind != NL || paramTokens[3].kind != IDENTIFIER || paramTokens[4].kind != COLON || paramTokens[5].kind != IDENTIFIER) {
-                diagReport(
-                    DiagReportLevel.ERROR,
-                    inputTokens[0..(0 + 1)],
-                    "invalid function parameter",
-                    "function parameter should be like `@RequestBody body: Request`"
-                )
-          }
-          match (paramTokens[1].value) {
+    let fcpTitle = "invalid function parameter"
+    let fcpMsg = "function parameter should be like `paraNamem: String`/  / `@RequestParam[\"ant_id\"] antId: String` / `@RequestBody body: Request` / `@PathVariable id: String` / `@RequestHeader auth: String` / `@RequestHeader[\"Content-Type\"] ct: String`"
+    let paramTokens = quote ( $funcParam )
+    // println("=============================")
+    // for (paramToken in paramTokens) {
+    //     println("accAttrToken: ${paramToken.kind} : ${quote($paramToken)}")
+    // }
+    // println("=============================")
+    if (paramTokens.size < 3) {
+            diagReport(
+                DiagReportLevel.ERROR,
+                inputTokens[0..(0 + 1)],
+                fcpTitle,
+                fcpMsg
+            )
+            throw Exception("invalid function parameter")
+    }
+    if (paramTokens.size <= 4) {
+        // =============================
+        // accAttrToken: IDENTIFIER : a
+        // accAttrToken: COLON : :
+        // accAttrToken: IDENTIFIER : String
+        // accAttrToken: COMMA : ,
+        // =============================
+        if (paramTokens[0].kind != IDENTIFIER || paramTokens[1].kind != COLON || paramTokens[2].kind != IDENTIFIER) {
+            diagReport(
+                DiagReportLevel.ERROR,
+                inputTokens[0..(0 + 1)],
+                fcpTitle,
+                fcpMsg
+            )
+            throw Exception("invalid function parameter")
+        }
+        return FeignFuncParam.QueryParam(paramTokens[0], paramTokens[2], paramTokens[0].value)
+    } else if (paramTokens[0].kind != AT) {
+        diagReport(
+            DiagReportLevel.ERROR,
+            inputTokens[0..(0 + 1)],
+            fcpTitle,
+            fcpMsg
+        )
+            throw Exception("invalid function parameter")
+    } else if (paramTokens.size <= 6) {
+        // =============================
+        // accAttrToken: AT : @
+        // accAttrToken: IDENTIFIER : RequestBody
+        // accAttrToken: NL : 
+
+        // accAttrToken: IDENTIFIER : body
+        // accAttrToken: COLON : :
+        // accAttrToken: IDENTIFIER : Request
+        // =============================
+        if (paramTokens.size != 6 || paramTokens[1].kind != IDENTIFIER || paramTokens[2].kind != NL || paramTokens[3].kind != IDENTIFIER || paramTokens[4].kind != COLON || paramTokens[5].kind != IDENTIFIER) {
+            diagReport(
+                DiagReportLevel.ERROR,
+                inputTokens[0..(0 + 1)],
+                "invalid function parameter",
+                "function parameter should be like `@RequestBody body: Request`"
+            )
+            throw Exception("invalid function parameter")
+        }
+        match (paramTokens[1].value) {
             case "RequestBody" => 
                 return FeignFuncParam.RequestBody(paramTokens[3], paramTokens[5])
             case "PathVariable" =>
                 return FeignFuncParam.PathVariable(paramTokens[3], paramTokens[5])
             case "QueryParam" =>
-                return FeignFuncParam.QueryParam(paramTokens[3], paramTokens[5])
+                return FeignFuncParam.QueryParam(paramTokens[3], paramTokens[5], paramTokens[3].value)
+            case "RequestHeader" =>
+                return FeignFuncParam.RequestHeader(paramTokens[3], paramTokens[5], paramTokens[3].value)
             case _ =>
                 diagReport(
                     DiagReportLevel.ERROR,
                     inputTokens[0..(0 + 1)],
-                    "invalid function parameter",
-                    "function parameter should be like `@RequestBody body: Request` or `@PathVariable id: String` or `@QueryParam name: String`"
+                    fcpTitle,
+                    fcpMsg
                 )
                 throw Exception("invalid function parameter")
-          }
-        } else if (paramTokens[0].kind == IDENTIFIER) {
-            // [0]  body(IDENTIFIER)| [1] :(COLON) | [2] Request(IDENTIFIER)
-            if (paramTokens.size != 3 || paramTokens[1].kind != COLON || paramTokens[2].kind != IDENTIFIER) {
-                diagReport(
-                    DiagReportLevel.ERROR,
-                    inputTokens[0..(0 + 1)],
-                    "invalid function parameter",
-                    "function parameter should be like `body: Request`"
-                )
-            }
-            return FeignFuncParam.QueryParam(paramTokens[0], paramTokens[2])
-        } else {
+        }
+    } else if (paramTokens.size <= 9) {
+        // =============================
+        // accAttrToken: AT : @
+        // accAttrToken: IDENTIFIER : RequestHeade
+        // accAttrToken: LSQUARE : [
+        // accAttrToken: STRING_LITERAL : "Content-Type"
+        // accAttrToken: RSQUARE : ]
+        // accAttrToken: NL : 
+
+        // accAttrToken: IDENTIFIER : contentType
+        // accAttrToken: COLON : :
+        // accAttrToken: IDENTIFIER : String
+        // =============================
+        if (paramTokens.size != 9 || paramTokens[1].kind != IDENTIFIER || paramTokens[2].kind != LSQUARE || paramTokens[3].kind != STRING_LITERAL || paramTokens[4].kind != RSQUARE || paramTokens[5].kind != NL || paramTokens[6].kind != IDENTIFIER || paramTokens[7].kind != COLON || paramTokens[8].kind != IDENTIFIER) {
             diagReport(
                 DiagReportLevel.ERROR,
                 inputTokens[0..(0 + 1)],
-                "invalid function parameter",
-                "function parameter should be like `@RequestBody body: Request` or `body: Request`"
+                fcpTitle,
+                fcpMsg
             )
             throw Exception("invalid function parameter")
         }
+        match (paramTokens[1].value) {
+            case "RequestParam" =>
+                return FeignFuncParam.QueryParam(paramTokens[6], paramTokens[8], paramTokens[3].value)
+            case "RequestHeader" =>
+                return FeignFuncParam.RequestHeader(paramTokens[6], paramTokens[8], paramTokens[3].value)
+            case _ =>
+                diagReport(
+                    DiagReportLevel.ERROR,
+                    inputTokens[0..(0 + 1)],
+                    fcpTitle,
+                    fcpMsg
+                )
+            throw Exception("invalid function parameter : ${paramTokens[1].value}")
+        }
+    } else {
+        diagReport(
+            DiagReportLevel.ERROR,
+            inputTokens[0..(0 + 1)],
+            fcpTitle,
+            fcpMsg
+        )
+        throw Exception("invalid function parameter")
+    }
 }
 
 enum FeignFuncParam {
     | RequestBody(Token, Token) // paramName, paramType
     | PathVariable(Token, Token) // paramName, paramType
-    | QueryParam(Token, Token) // paramName, paramType
+    | QueryParam(Token, Token, String) // paramName, paramType, titleValue
+    | RequestHeader(Token, Token, String) // paramName, paramType, titleValue
 }
 
 enum Attr {
