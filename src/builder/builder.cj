@@ -14,6 +14,7 @@ public class FeignClientParams {
     public var path: Option<String> = None
     public var requestCreatedProcessors: ArrayList<RequestProcessor> = ArrayList()
     public var requestPerSendProcessors: ArrayList<RequestProcessor> = ArrayList()
+    public var noDefaultContentTypeHeader: Bool = false
 }
 
 public class FeignFuncConfigs {

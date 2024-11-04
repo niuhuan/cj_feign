@@ -293,10 +293,10 @@ func processFuncDecl(macroExpandDecl: MacroExpandDecl, funcDecl: FuncDecl, input
             try {
                  //  request body,  query param (url encode)
                  $(
-                    if (queryParams.size > 0) {
-                        formTokens
-                    } else {
+                    if (requestBody.isSome()) {
                         requestBodyTokens
+                    } else {
+                        formTokens
                     }
                  )
                  $headerTokens
@@ -316,60 +316,71 @@ func processFuncDecl(macroExpandDecl: MacroExpandDecl, funcDecl: FuncDecl, input
 }
 
 private func formTokens(mapping: FeignClientMapping, queryParams: ArrayList<FeignFuncParam>) : Tokens {
-    var formAddTokens = quote ( let form = Form() )
-    for (qp in queryParams) {
-        match (qp) {
-            case FeignFuncParam.QueryParam(id, idType, idTitle) =>
-                if (idType.value == "String") {
-                    formAddTokens += quote (
-                        form.add($(idTitle), $(id))
+    var formAddTokens = quote()
+    if (queryParams.size >= 0) {
+        formAddTokens += quote ( let form = Form() )
+        for (qp in queryParams) {
+            match (qp) {
+                case FeignFuncParam.QueryParam(id, idType, idTitle) =>
+                    if (idType.value == "String") {
+                        formAddTokens += quote (
+                            form.add($(idTitle), $(id))
+                        )
+                    } else {
+                        formAddTokens += quote (
+                            form.add($(idTitle), $(id).ToString())
+                        )
+                    }
+                case _ => throw Exception("invalid query param")
+            }
+        }
+        match (mapping) {
+            case FeignClientMapping.GetMapping =>
+                formAddTokens += quote (
+                    let fullUrl = url.toString() + "?" + form.toEncodeString()
+                    let requestBuilder = FeignClientRequestBuilder.request(
+                        this.feignClientParams,
+                        this.feignClientConfigs,
+                        funcCfg
                     )
-                } else {
-                    formAddTokens += quote (
-                        form.add($(idTitle), $(id).ToString())
+                    .url(fullUrl)
+                )
+            case _ =>
+                formAddTokens += quote (
+                    let requestBuilder = FeignClientRequestBuilder.request(
+                        this.feignClientParams,
+                        this.feignClientConfigs,
+                        funcCfg
                     )
-                }
-            case _ => throw Exception("invalid query param")
+                    .url(url)
+                    .body(form.toEncodeString())
+                )
         }
     }
     match (mapping) {
         case FeignClientMapping.GetMapping =>
             formAddTokens += quote (
-                let fullUrl = url.toString() + "?" + form.toEncodeString()
-                let requestBuilder = FeignClientRequestBuilder.request(
-                    this.feignClientParams,
-                    this.feignClientConfigs,
-                    funcCfg
-                )
-                .url(fullUrl)
                 .get()
             )
-        case _ =>
+        case FeignClientMapping.PostMapping =>
             formAddTokens += quote (
-                let requestBuilder = FeignClientRequestBuilder.request(
-                    this.feignClientParams,
-                    this.feignClientConfigs,
-                    funcCfg
-                )
-                .url(url)
-                .body(form.toEncodeString())
-                .header("Content-Type", "application/x-www-form-urlencoded")
+                .post()
             )
-            match (mapping) {
-                case FeignClientMapping.PostMapping =>
-                    formAddTokens += quote (
-                        .post()
-                    )
-                case FeignClientMapping.PutMapping =>
-                    formAddTokens += quote (
-                        .put()
-                    )
-                case FeignClientMapping.DeleteMapping =>
-                    formAddTokens += quote (
-                        .delete()
-                    )
-                case _ => throw Exception("invalid mapping")
+        case FeignClientMapping.PutMapping =>
+            formAddTokens += quote (
+                .put()
+            )
+        case FeignClientMapping.DeleteMapping =>
+            formAddTokens += quote (
+                .delete()
+            )
+    }
+    if (queryParams.size >= 0) {
+        formAddTokens += quote (
+            if (!this.feignClientParams.noDefaultContentTypeHeader) {
+                requestBuilder.header("Content-Type", "application/x-www-form-urlencoded")
             }
+        )
     }
     formAddTokens
 }
@@ -385,7 +396,6 @@ private func requestBodyTokens(mapping: FeignClientMapping, requestBody: Option<
         case Some(FeignFuncParam.RequestBody(id, _)) =>
             requestBodyTokens += quote (
                 .body($(id).serialize().toJson().toJsonString())
-                .header("Content-Type", "application/json")
             )
         case _ => 
             requestBodyTokens += quote ()
@@ -408,6 +418,11 @@ private func requestBodyTokens(mapping: FeignClientMapping, requestBody: Option<
                 .get()
             )
     }
+    requestBodyTokens += quote (
+        if (!this.feignClientParams.noDefaultContentTypeHeader) {
+            requestBuilder.header("Content-Type", "application/json")
+        }
+    )
     requestBodyTokens
 }
 
