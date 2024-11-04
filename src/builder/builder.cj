@@ -4,6 +4,7 @@ import net.http.*
 import serialization.serialization.*
 import encoding.json.*
 import std.io.*
+import std.collection.*
 
 public class FeignClientConfigs {
     public var path: Option<String> = None
@@ -11,11 +12,18 @@ public class FeignClientConfigs {
 
 public class FeignClientParams {
     public var path: Option<String> = None
+    public var requestCreatedProcessors: ArrayList<RequestProcessor> = ArrayList()
+    public var requestPerSendProcessors: ArrayList<RequestProcessor> = ArrayList()
 }
 
 public class FeignFuncConfigs {
     public var path: Option<String> = None
 }
+
+public interface RequestProcessor {
+    func process(request: HttpRequestBuilder): HttpRequestBuilder
+}
+
 
 public interface FeignClientInterface<T> {
    static func build(params: FeignClientParams): T
@@ -25,6 +33,10 @@ public class FeignClientBuilder {
 
     public static func build<T>():T  where T <: FeignClientInterface<T> {
         T.build(FeignClientParams())
+    } 
+
+    public static func build<T>(feignClientParams: FeignClientParams):T  where T <: FeignClientInterface<T> {
+        T.build(feignClientParams)
     } 
 
 }
@@ -44,18 +56,37 @@ public class FeignClientRequestBuilder {
      }
 
     public static func client(
-        feignClientParams: FeignClientParams,
-        feignClientConfigs: FeignClientConfigs,
-        feignFuncConfigs: FeignFuncConfigs
+        _: FeignClientParams,
+        _: FeignClientConfigs,
+        _: FeignFuncConfigs
      ) : Client {
         ClientBuilder().build()
     }
 
+    public static func request(
+        feignClientParams: FeignClientParams,
+        _: FeignClientConfigs,
+        _: FeignFuncConfigs
+     ) : HttpRequestBuilder {
+        var builder = HttpRequestBuilder()
+        for (processor in feignClientParams.requestCreatedProcessors) {
+            builder = processor.process(builder)
+        }
+        builder
+    }
+
     public static func execute<T>(
         client: Client,
-        request: HttpRequest
+        feignClientParams: FeignClientParams,
+        _: FeignClientConfigs,
+        _: FeignFuncConfigs,
+        requestBuilder: HttpRequestBuilder
     ) :T where T <: Serializable<T> {
-        let response = client.send(request)
+        var builder: HttpRequestBuilder = requestBuilder
+        for (processor in feignClientParams.requestPerSendProcessors) {
+            builder = processor.process(builder)
+        }
+        let response = client.send(builder.build())
         let body = response.body
         let jsonString = StringReader(body).readToEnd()
         let jv: JsonValue = JsonValue.fromStr(jsonString)

@@ -300,7 +300,13 @@ func processFuncDecl(macroExpandDecl: MacroExpandDecl, funcDecl: FuncDecl, input
                     }
                  )
                  $headerTokens
-                 FeignClientRequestBuilder.execute<$(funcReturnType)>(client, requestBuilder.build())
+                 FeignClientRequestBuilder.execute<$(funcReturnType)>(
+                    client, 
+                    this.feignClientParams,
+                    this.feignClientConfigs,
+                    funcCfg,
+                    requestBuilder
+                 )
             } finally {
                 client.close()
             }
@@ -330,16 +336,24 @@ private func formTokens(mapping: FeignClientMapping, queryParams: ArrayList<Feig
         case FeignClientMapping.GetMapping =>
             formAddTokens += quote (
                 let fullUrl = url.toString() + "?" + form.toEncodeString()
-                let requestBuilder = HttpRequestBuilder()
+                let requestBuilder = FeignClientRequestBuilder.request(
+                    this.feignClientParams,
+                    this.feignClientConfigs,
+                    funcCfg
+                )
                 .url(fullUrl)
                 .get()
             )
         case _ =>
             formAddTokens += quote (
-                let requestBuilder = HttpRequestBuilder()
-                    .url(url)
-                    .body(form.toEncodeString())
-                    .header("Content-Type", "application/x-www-form-urlencoded")
+                let requestBuilder = FeignClientRequestBuilder.request(
+                    this.feignClientParams,
+                    this.feignClientConfigs,
+                    funcCfg
+                )
+                .url(url)
+                .body(form.toEncodeString())
+                .header("Content-Type", "application/x-www-form-urlencoded")
             )
             match (mapping) {
                 case FeignClientMapping.PostMapping =>
@@ -362,7 +376,9 @@ private func formTokens(mapping: FeignClientMapping, queryParams: ArrayList<Feig
 
 private func requestBodyTokens(mapping: FeignClientMapping, requestBody: Option<FeignFuncParam>) : Tokens {
     var requestBodyTokens = quote (
-        let requestBuilder = HttpRequestBuilder()
+        let requestBuilder = FeignClientRequestBuilder.request(this.feignClientParams,
+                this.feignClientConfigs,
+                funcCfg)
                             .url(url)
     )
     match (requestBody) {
