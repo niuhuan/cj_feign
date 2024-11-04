@@ -2,36 +2,35 @@ package cj_feign.tests
 
 import std.unittest.*
 import std.unittest.testmacro.*
-import serialization.serialization.*
-import encoding.json.*
-import encoding.url.*
 
 import std.io.*
 import std.log.*
 import log.*
-import net.http.*
 import std.time.*
 import std.sync.*
+import net.http.ServerBuilder
 
 import cj_lombok.*
 import cj_feign.*
 
 @When[test]
+@Default
 @ToString
-@AllArgsConstructor
-@Serializable[AllArgsConstructor]
+@Serializable
 @Json
+@AllArgsConstructor
 public class Request {
-    let request_conetent: String
+    var request_conetent: String
 }
 
 @When[test]
+@Default
 @ToString
-@AllArgsConstructor
-@Serializable[AllArgsConstructor]
+@Serializable
 @Json
+@AllArgsConstructor
 public class Response {
-    let response_content: String
+    var response_content: String
 }
 
 @FeignClient[path = "http://localhost:18080"]

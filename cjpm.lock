@@ -1,4 +1,4 @@
 version = 0
 
 [requires]
-  cj_lombok = {commitId = "2315c7c193ec2797a838f833ad588f1da38022f6", git = "https://gitcode.com/niuhuan_cn/cj_lombok"}
+  cj_lombok = {commitId = "e3f451b91615983a49935c8305ce096482072fe7", git = "https://gitcode.com/niuhuan_cn/cj_lombok"}

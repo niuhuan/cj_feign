@@ -32,23 +32,25 @@ cj_lombok = { git = "https://gitcode.com/niuhuan_cn/cj_feign.git" }
 
 运行单元测试 `cjpm test src/tests`
 
-
 ```cangjie
 
+
+@Default
 @ToString
-@AllArgsConstructor
-@Serializable[AllArgsConstructor]
+@Serializable
 @Json
+@AllArgsConstructor
 public class Request {
-    let request_conetent: String
+    var request_conetent: String
 }
 
+@Default
 @ToString
-@AllArgsConstructor
-@Serializable[AllArgsConstructor]
+@Serializable
 @Json
+@AllArgsConstructor
 public class Response {
-    let response_content: String
+    var response_content: String
 }
 
 // 创建一个客户端
