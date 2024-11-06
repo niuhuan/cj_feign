@@ -1,4 +1,0 @@
-version = 0
-
-[requires]
-  cj_lombok = {commitId = "e3f451b91615983a49935c8305ce096482072fe7", git = "https://gitcode.com/niuhuan_cn/cj_lombok"}
